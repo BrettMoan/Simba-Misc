@@ -16,8 +16,8 @@ type
   EDropStyle = (dsRegular, dsIntense, dsAdaptive);
 
 const
-  LOGIN_NAME   = '';
-  LOGIN_PASS   = '';
+  LOGIN_NAME   = '';    //Username/Email
+  LOGIN_PASS   = '';    //Password
   RS_WORLD     = -1;          // preferred world
   IS_MEMBER    = False;       //
   SHIFT_DROP   = True;        // use shift to drop
@@ -25,7 +25,7 @@ const
 
   CONFIG_PATH = IncludePath+'Universal_Miner/';
   CONFIG_FILE = 'config.cfg';
-  CONFIG_MAP  = 'map.png';
+  CONFIG_MAP  = 'world.png';
 
   INTENSITY_LEVEL = 88;
   CHANCE_OF_MISS = 1;
@@ -101,7 +101,8 @@ begin
   for Key in keys do
     if GetAsyncKeyState(key) and $8000 <> 0 then
     begin
-      while GetAsyncKeyState(key) and $8000 <> 0 do Wait(10);
+      while GetAsyncKeyState(key) and $8000 <> 0 do
+        Wait(10);
       if key = VK_OEM_PERIOD then key := Ord('.');
       if key = VK_OEM_MINUS  then key := Ord('-');
       Exit(Char(key));
@@ -131,7 +132,7 @@ function GetRSAppletWnd(PID: DWORD): DWORD;
   end;
 var
   p: TSysProc;
-  client: DWORD;
+  //client: DWORD;
 begin
   for p in GetProcesses() do
     if p.Pid = PID then
@@ -140,7 +141,6 @@ begin
   if Result = 0 then
     Result := NativeClient;
 end;
-
 
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
@@ -189,7 +189,6 @@ begin
   inherited;
 end;
 
-
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // MISC BOT FUNCTIONS
@@ -217,7 +216,6 @@ begin
   SetLength(Self.Data, High(Self.Data));
 end;
 
-
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // OVERRIDES AND METHODS FOR FATIGUE
@@ -243,7 +241,6 @@ begin
   WaitFatigue(PerformanceTimer()-t, 0.2);
 end;
 
-
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // MINER
@@ -253,7 +250,6 @@ begin
   if Self.StartTime = 0 then Exit(0);
   Result := GetTickCount() - Self.StartTime;
 end;
-
 
 procedure TMiner.DeclarePlayers();
 begin
@@ -304,7 +300,7 @@ end;
 
 procedure TMiner.ProcessWhileWaiting();
 var
-  n,atNextLvl,atCurrLvl:Int32;
+  atNextLvl,atCurrLvl:Int32;
 begin
   BotStats.Gains := BotStats.Count * BotStats.XPPerOre;
   BotStats.CurrXP  := BotStats.StartInfo.XP + BotStats.Gains;
@@ -337,7 +333,6 @@ begin
   Self.DoAntiban;
 end;
 
-
 function TMiner.Contains(R: TRectangle; Colors: array of TCTS2Color): Boolean;
 var
   TPA: TPointArray;
@@ -351,7 +346,6 @@ begin
   end;
 end;
 
-
 function TMiner.Find(Locations: TPointArray): TRectArray;
 var
   i: Int32;
@@ -359,10 +353,15 @@ var
   rect: TRectangle;
 begin
   me := RSW.GetMyPos();
+  smart.Image.Clear();
+  {$IFDEF SMARTDEBUG}
+    ProggyArea := Smart.Image.DrawSkillReport([288,2], clProgBrown, Trunc(BotStats.CurrXP), Trunc(BotStats.Gains), BotStats.Count, 'Mining');
+  {$ENDIF}
   for i:=0 to High(Locations) do
   begin
     rect := WorldToMSTile(me, Locations[i], 0,0,0).Expand(-2);
     if MainScreen.GetBounds.Contains(rect.Bounds) then
+      smart.Image.DrawTPA(rect.ToTPA.Connect, $FFFF); // adding drawing of boxes
       Result += rect;
   end;
 
@@ -378,7 +377,8 @@ begin
       Players.GetCurrent^.Login();
       MainScreen.SetAngle(True);
       WaitEx(500,150);
-    end else if (Self.FailCount > 10) then
+    end
+    else if (Self.FailCount > 10) then
       TerminateScript('Not close enough to objects: ('+ ToStr(me.x) +','+ToStr(me.y)+') -> '+ ToStr(locations));
 
     Inc(Self.FailCount);
@@ -387,7 +387,6 @@ begin
     Self.FailCount := 0;
 end;
 
-
 function TMiner.DoWork(): Boolean;
 var
   i: Int32;
@@ -395,6 +394,7 @@ var
   TRA: TRectArray;
   next: TRectangle;
   tmpCurrXP, invCount: Int32;
+  msg: String;
 
   function MaybeMiss(): Boolean;
   var
@@ -416,16 +416,16 @@ var
   begin
     mouse.Move(rect, Random(10) = 0);
     WaitEx(65,10);
+
     if not Mainscreen.IsUpText(['Mine', 'Rocks']) then
       Exit(1);
-
     if (not MaybeMiss()) then
-      Exit(0);
+      Exit(3);
 
     if (not ((Random() <= 0.05) and ChooseOption.Select('Mine Rocks'))) and
        (not Mouse.Click(ctRed)) then
     begin
-      Wait(400,7000,wdLeft);
+      Wait(400,3000,wdLeft);
       Self.DoAntiban;
       WaitFatigue(Random(1500,3000), 0.6);
       Exit(0);
@@ -435,10 +435,10 @@ var
     for 6 to Round(srl.TruncatedGauss(0,12)) do
     begin
       Mouse.Click(mouse_Left);
-      WaitEx(65,10);
+      Minimap.WaitPlayerMoving(False);
     end;
 
-    WaitEx(300,60);
+    WaitFatigue(Random(700,1200), 0.1);
     Result := 2;
   end;
 
@@ -462,6 +462,7 @@ begin
       0: Exit;
       1: Continue;
       2: Minimap.WaitPlayerMoving(False);
+      3: Break;
     end;
 
     next := ClickOrder.Pop();
@@ -477,18 +478,23 @@ begin
     end;
 
     TRA := Find(self.RockSpots); // update the TRA in case we moved
-    T.Init(srl.NormalRange(20000,25000)); //XXXXXXXXXXXX
-    while (not T.IsFinished) and Contains(TRA[i], Self.RockColors) do
+    T.Init(srl.NormalRange(2000,4000)); //XXXXXXXXXXXX
+
+    while (Inventory.Count = invCount) do
     begin
       if(Chatbox.GotLevelUp()) then
         if(Random(9) = 0) then
           Chatbox.HandleLevelUp()
         else
           Break;
-
       if 'inventory is too full' in Chatbox.GetNotification() then
         Break;
-
+      if T.IsFinished or (not srl.IsAnimating(Mainscreen.GetPlayerBox, 300, 500, 2)) then
+        Break;
+      //for i:=0 to 5 do // loop as sometimes GetLastMessage() doesn't catch the latest message
+      //  msg := Chatbox.GetLastMessage();
+      //if not ('You swing your pick at the rock.' in msg) then
+      //  Break;
       Self.ProcessWhileWaiting();
       Wait(30);
     end;
@@ -506,7 +512,6 @@ begin
     Exit(True);
   end;
 end;
-
 
 procedure TMiner.DoBanking();
   function OpenBank(): Boolean;
@@ -560,7 +565,6 @@ begin
   if(not Walk(self.BankPath)) then
     TerminateScript('Failed to walk path [1]');
   Self.DoAntiban;
-
   if(not OpenBank()) then
     TerminateScript('Failed to open bank');
   PostAction(False);
@@ -573,7 +577,6 @@ begin
     TerminateScript('Failed to walk path [2]');
   Self.DoAntiban;
 end;
-
 
 procedure TMiner.IntenseDrop(Test: function: Boolean of Object);
 var
@@ -606,11 +609,10 @@ begin
     Inventory.DropItemsExcept([0], Inventory.ErrorPattern(DROP_PATTERN_SNAKE));
 end;
 
-
 procedure TMiner.Run();
 var
   loc: TPoint;
-
+  //T2: TCountDown;
   procedure TryDropWhileMining();
   begin
     if (not HasBanking) and (INTENSE_DROP in [dsIntense,dsAdaptive])  then
@@ -637,12 +639,14 @@ begin
        (not RSW.WalkPath(self.BankPath.Reversed)) then
       TerminateScript('Failed to walk from bank on startup');
   end;
-
+  //T2.Init(srl.NormalRange(200000,250000)); //XXXXXXXXXXXX
   repeat
     if (Random(5000) <> 0) and Inventory.IsFull() then
     begin
-      if HasBanking then Self.DoBanking()
-      else               Self.DropInventory();
+      if HasBanking then
+        Self.DoBanking()
+      else
+        Self.DropInventory();
       Inc(BotStats.Trips);
     end;
 
@@ -653,7 +657,8 @@ begin
     end else
       Players.GetCurrent()^.Login();
     Wait(1);
-  until False;
+  //until T2.IsFinished;// was false, changed to check for "following bitmaps were not freed" error
+  until false;
 end;
 
 procedure TMiner.Init();
@@ -666,11 +671,10 @@ begin
   self.DeclarePlayers();
   Mouse.Speed := 10;
   Players.GetCurrent()^.Login();
-
+  MainScreen.SetAngle(True);
+  Options.SetZoomNotch(ZOOM_NOTCH_DEFAULT);
   Inventory.ShiftDrop := SHIFT_DROP;
 end;
-
-
 
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
@@ -681,7 +685,6 @@ var
   r: String;
   DefaultBox: TBox = [75,40, 425,140];
   client2: TClient;
-
 type
   TButtonBox = record
     TextTPA: TPointArray;
@@ -707,13 +710,13 @@ type
 
   procedure WaitReleaseKey();
   begin
-    while client2.GetIOManager.IsMouseButtonDown(0) do Wait(10);
+    while client2.GetIOManager.IsMouseButtonDown(mouse_Left) do Wait(10);
   end;
 
   function GetClick(out p: TPoint): Boolean;
   begin
     if not HasFocus(smart.PID) then Exit();
-    if client2.GetIOManager.IsMouseButtonDown(0) then
+    if client2.GetIOManager.IsMouseButtonDown(mouse_Left) then
     begin
       client2.GetIOManager.GetMousePos(p.x,p.y);
       Result := p.InBox(GetClientBounds);
@@ -724,7 +727,7 @@ type
   function GetButton(txt: String): TButtonBox;
   begin
     Result.TextTPA := TPAFromText(txt, StatChars07);
-    Result.Bounds  := GetTPABounds(Result.TextTPA).ExpandFunc(8);
+    Result.Bounds  := GetTPABounds(Result.TextTPA).Expand(8);
   end;
 
   function DrawButton(p: TPoint; var Button: TButtonBox): TButtonBox;
@@ -732,7 +735,7 @@ type
     Button.TextTPA.Offset(p);
     Button.Bounds.Offset(p);
     smart.Image.DrawBox(Button.Bounds, True, 2502198);
-    smart.Image.DrawBox(Button.Bounds.ExpandFunc(-1), True, 4607315);
+    smart.Image.DrawBox(Button.Bounds.Expand(-1), True, 4607315);
     smart.Image.DrawTPA(Button.TextTPA, $FFFFFF);
   end;
 
@@ -743,10 +746,10 @@ type
     box: TBox;
   begin
     if (Area.x1 = Area.x2) then Area := chatbox.GetBounds;
-    smart.Image.DrawBox(Area.ExpandFunc(-0), False, $1F2F33);
-    smart.Image.DrawBox(Area.ExpandFunc(-1), False, $3F4A5A);
-    smart.Image.DrawBox(Area.ExpandFunc(-2), False, $1F2F33);
-    smart.Image.DrawBox(Area.ExpandFunc(-3), True,  $171D20);
+    smart.Image.DrawBox(Area.Expand(-0), False, $1F2F33);
+    smart.Image.DrawBox(Area.Expand(-1), False, $3F4A5A);
+    smart.Image.DrawBox(Area.Expand(-2), False, $1F2F33);
+    smart.Image.DrawBox(Area.Expand(-3), True,  $171D20);
 
     TPA := TPAFromText(Text, SmallChars07);
     box := GetTPABounds(TPA);
@@ -796,7 +799,7 @@ type
 
   function QueryStr(Text: String; Area:TBox=[]): string;
   var
-    i: Int32;
+    //i: Int32;
     pt, p: TPoint;
     chr: Char;
     B: TBox;
@@ -807,10 +810,10 @@ type
       Area := chatbox.GetBounds;
 
     // query
-    smart.Image.DrawBox(Area.ExpandFunc(-0), False, $1F2F33);
-    smart.Image.DrawBox(Area.ExpandFunc(-1), False, $3F4A5A);
-    smart.Image.DrawBox(Area.ExpandFunc(-2), False, $1F2F33);
-    smart.Image.DrawBox(Area.ExpandFunc(-3), True,  $171D20);
+    smart.Image.DrawBox(Area.Expand(-0), False, $1F2F33);
+    smart.Image.DrawBox(Area.Expand(-1), False, $3F4A5A);
+    smart.Image.DrawBox(Area.Expand(-2), False, $1F2F33);
+    smart.Image.DrawBox(Area.Expand(-3), True,  $171D20);
 
     TPA := TPAFromText(Text, SmallChars07);
     OffsetTPA(TPA, Point(Area.x1+40, Area.y1+20));
@@ -847,7 +850,8 @@ type
         TPA := TPAFromText(Result, 'SmallChars07');
         TPA.Offset(pt);
         smart.Image.DrawBox(GetTPABounds(TPA), True, $171D20);
-        while IsKeyDown2(VK_BACK) do Wait(50);
+        while IsKeyDown2(VK_BACK) do
+          Wait(50);
         SetLength(Result, Length(Result)-1);
         smart.Image.DrawText(Result, 'SmallChars07', pt, False, $FFCCAA);
       end;
@@ -899,7 +903,7 @@ type
     begin
       for i:=0 to High(Colors) do
         for j:=0 to High(R) do
-          if srl.FindColors(TPA, Colors[i], R[j].Bounds.ExpandFunc(-1)) then
+          if srl.FindColors(TPA, Colors[i], R[j].Bounds.Expand(-1)) then
           begin
             TPA := R[j].Filter(TPA);
             smart.Image.DrawTPA(TPA, $FF);
@@ -977,21 +981,21 @@ type
   begin
     TPA := Self.BankPath + Self.RockSpots + Self.BankSpots;
 
-    sz := Point(High(RSW.WorldMap[0]),High(RSW.WorldMap));
-    B := TPA.Bounds.ExpandFunc(Pad);
-    B.LimitTo(Box(0,0,sz.x,sz.y));
+    //sz := Point(High(RSW.WorldMap[0]),High(RSW.WorldMap));
+    B := TPA.Bounds.Expand(Pad);
+    //B.LimitTo(Box(0,0,sz.x,sz.y));
 
     map.Init(client.GetMBitmaps);
     map.SetSize(B.Width, B.Height);
     for pt in TPA do
     begin
       slice.Init(client.GetMBitmaps);
-      slice.DrawMatrix(RSW.WorldMap.Crop(Box(
-          Max(0,pt.x-Pad),
-          Max(0,pt.y-Pad),
-          Min(sz.x,pt.x+Pad),
-          Min(sz.y,pt.y+Pad)
-      )));
+      //slice.DrawMatrix(RSW.WorldMap.Crop(Box(
+      //    Max(0,pt.x-Pad),
+      //    Max(0,pt.y-Pad),
+      //    Min(sz.x,pt.x+Pad),
+      //    Min(sz.y,pt.y+Pad)
+      //)));
       slice.DrawTransparent(pt.x-B.x1-Pad,pt.y-B.y1-Pad, map);
       slice.Free();
     end;
@@ -1023,7 +1027,7 @@ type
     CreateDirectory(CONFIG_PATH);
     CreateDirectory(ConfigPath);
 
-    GenerateMap(ConfigPath+CONFIG_MAP);
+    //GenerateMap(ConfigPath+CONFIG_MAP);       // this is broken. makes empty map now and screws up the pixel locations
     CloseFile(CreateFile(ConfigPath+CONFIG_FILE));
 
     f := RewriteFile(Self.ConfigPath+CONFIG_FILE, True);
@@ -1061,7 +1065,7 @@ START:
 
   r := MessageBox('Preparing, please stand by...', DefaultBox);
   minimap.SetCompassAngle(0);
-  RSW.Init('world.png');
+  //RSW.Init(CONFIG_MAP);
 
   Query('Click the rocks you wish to mine...', ['OK'], DefaultBox);
   RockSpots := SetupLocations();
@@ -1084,26 +1088,21 @@ START:
   Self.ConfigPath := CONFIG_PATH + QueryStr('Save config as: ', DefaultBox) + '/';
   SaveConfig();
 
-  RSW.Free();
+  //RSW.Free();
   client2.Free();
 end;
 
-
 begin
   NativeClient := GetNativeWindow();
-
   smart.EnableDrawing := True;
   srl.Setup([]);
   srl.Options := [soDebugAntiban];
   AddOnTerminate(@smart.Free);
-
+  RSW.Init(CONFIG_MAP);
+  AddOnTerminate(@RSW.Free);
+  
+  //RSW.MemScanEnabled := False;
   Bot.Init();
   Bot.Setup();
-
-  RSW.Init(Bot.ConfigPath+CONFIG_MAP);
-  AddOnTerminate(@RSW.Free);
-  //RSW.MemScanEnabled := False;
-
   Bot.Run();
 end.
-
